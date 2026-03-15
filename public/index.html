@@ -1,0 +1,55 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Cosmic Weaver</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <header>
+            <h1>The Cosmic Weaver</h1>
+            <div id="multiplayer-panel">
+                <button id="btn-create-room" style="background-color: #3b82f6;">Tạo Phòng</button>
+                <input type="text" id="room-input" placeholder="Mã 4 số..." maxlength="4" style="width: 80px;">
+                <button id="btn-join">Vào</button>
+                <span id="room-status">Chưa vào phòng</span>
+                <button id="btn-start-mp" style="display:none; background-color: #10b981;">Bắt đầu Game</button>
+            </div>
+            <div id="status-panel">
+                <span>Seed: <strong id="seed-display">---</strong></span>
+                <span id="timer-display" style="margin-left:15px; color:#f59e0b;">00:00</span>
+            </div>
+            <div id="actions">
+                <button id="btn-undo">Undo</button>
+                <button id="btn-restart">Thử lại (Reset Line)</button>
+                <button id="btn-new-game" style="background-color: #ef4444;">Đổi màn mới</button>
+                <!-- Tạm ẩn nút show đáp án chờ Giai đoạn vẽ -->
+                <button id="btn-hint" style="background-color: #8b5cf6; display: none;">Xem Đáp án</button>
+            </div>
+        </header>
+
+        <!-- Overlay Phân tích Đồ thị -->
+        <div id="analysis-overlay">
+            <h2>Giai đoạn Kiểm tra</h2>
+            <p>Liệu chòm sao này có thể được thắp sáng bằng một nét vẽ liên tục và có thể quay về điểm xuất phát không? (Hãy đếm số đỉnh bậc lẻ)</p>
+            <div class="analysis-btn-group">
+                <button id="btn-guess-circuit" class="btn-guess">Đó là Chu trình Euler (0 đỉnh lẻ)</button>
+                <button id="btn-guess-path" class="btn-guess">Chỉ là Đường đi Euler (2 đỉnh lẻ)</button>
+                <button id="btn-guess-none" class="btn-guess">Không phải cả hai (Nhiều đỉnh lẻ)</button>
+            </div>
+            <p id="analysis-feedback" style="color: #ef4444; margin-top: 10px; font-weight: bold;"></p>
+        </div>
+
+        <main style="position: relative;">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+        </main>
+    </div>
+
+    <!-- Socket.io client -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- ES6 Module load -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
