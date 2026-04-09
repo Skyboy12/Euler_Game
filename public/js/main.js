@@ -83,6 +83,9 @@ let gameStartTime = 0;
 let timerInterval = null;
 
 function getEdgeKey(u, v) {
+    if (currentGraphGen && currentGraphGen.isHardMode) {
+        return `${u}-${v}`;
+    }
     // Luôn sắp xếp u, v từ bé đến lớn để có key duy nhất cho vô hướng
     return u < v ? `${u}-${v}` : `${v}-${u}`;
 }
@@ -206,11 +209,13 @@ function connectMultiplayer() {
 
     document.getElementById('btn-start-mp').onclick = () => {
         if(socket && currentRoomId) {
+            const isHard = document.getElementById('chk-hard-mode').checked;
             socket.emit('START_GAME', {
                 roomId: currentRoomId,
                 nodeCount: getRandomNodeCount(),
                 complexity: COMPLEXITY,
-                levelId: LEVEL_ID
+                levelId: LEVEL_ID,
+                isHardMode: isHard // Đồng bộ host game config
             });
         }
     };
@@ -224,7 +229,7 @@ function generateGame(encodedSeedStr) {
     
     // 3. Khởi tạo đối tượng map
     if(animationTimeout) clearTimeout(animationTimeout);
-    currentGraphGen = new GraphGenerator(configData.nodeCount, configData.complexity, configData.rawNumericSeed);
+    currentGraphGen = new GraphGenerator(configData.nodeCount, configData.complexity, configData.rawNumericSeed, configData.isHardMode);
     adjacencyList = currentGraphGen.generate();
     
     // Thu thập màn hình vẽ
@@ -350,9 +355,23 @@ function updateSidebarGraphUI() {
 function checkGraphTypeGuess(guessedType) {
     // Tính bậc các đỉnh
     let oddDegreeCount = 0;
-    for (const [node, neighbors] of adjacencyList.entries()) {
-        if (neighbors.length % 2 !== 0) {
-            oddDegreeCount++;
+    if (currentGraphGen && currentGraphGen.isHardMode) {
+        let inDegree = new Array(currentGraphGen.nodeCount).fill(0);
+        let outDegree = new Array(currentGraphGen.nodeCount).fill(0);
+        for (const [node, neighbors] of adjacencyList.entries()) {
+            outDegree[node] = neighbors.length;
+            for (let v of neighbors) {
+                inDegree[v]++;
+            }
+        }
+        for (let i = 0; i < inDegree.length; i++) {
+            if (inDegree[i] !== outDegree[i]) oddDegreeCount++;
+        }
+    } else {
+        for (const [node, neighbors] of adjacencyList.entries()) {
+            if (neighbors.length % 2 !== 0) {
+                oddDegreeCount++;
+            }
         }
     }
 
@@ -368,10 +387,26 @@ function checkGraphTypeGuess(guessedType) {
             // Không phải Euler -> Cho người chơi tự nối
             setTimeout(() => {
                 let oddCount = 0;
-                for (let [node, edges] of adjacencyList.entries()) {
-                    if (edges.length % 2 !== 0) oddCount++;
+                if (currentGraphGen && currentGraphGen.isHardMode) {
+                    let inDegree = new Array(currentGraphGen.nodeCount).fill(0);
+                    let outDegree = new Array(currentGraphGen.nodeCount).fill(0);
+                    for (const [node, neighbors] of adjacencyList.entries()) {
+                        outDegree[node] = neighbors.length;
+                        for (let v of neighbors) {
+                            inDegree[v]++;
+                        }
+                    }
+                    for (let i = 0; i < inDegree.length; i++) {
+                        if (inDegree[i] !== outDegree[i]) oddCount++;
+                    }
+                    // For directed graphs, we need pairs to fix them
+                    maxFixConnections = oddCount > 2 ? oddCount / 2 - 1 : 0;
+                } else {
+                    for (let [node, edges] of adjacencyList.entries()) {
+                        if (edges.length % 2 !== 0) oddCount++;
+                    }
+                    maxFixConnections = (oddCount / 2) - 1;
                 }
-                maxFixConnections = (oddCount / 2) - 1;
                 currentFixConnections = 0;
 
                 alert(`Hệ thống hiện tại không thể đồng bộ liên tục!\nTRẠNG THÁI SỬA CHỮA: Hãy tìm và xác định các ngôi sao lẻ, sau đó sử dụng giao thức kết nối các ngôi sao đó. Khi ấn vào 1 ngôi sao (đỉnh) sẽ thắp sáng, ấn sang ngôi sao khác để thêm giao thức hoặc ấn lại để hủy, cho phép số giao thức kết nối là ${maxFixConnections}`);
@@ -402,6 +437,10 @@ function checkGraphTypeGuess(guessedType) {
 
 // Kiểm tra "Cạnh Cầu" (Thuật toán Fleury)
 function isBridge(u, v) {
+    if (currentGraphGen && currentGraphGen.isHardMode) {
+        return false; // Skip strict Fleury checking for hard mode
+    }
+    
     // 1. Phân tích Sub-graph gồm các cạnh CHƯA đi qua
     let adjRemaining = new Map();
     for(let i=0; i<nodes.length; i++) adjRemaining.set(i, []);
@@ -492,7 +531,8 @@ function showHint() {
 
 function initGame() {
     // Khởi động Offline Local
-    const encodedSeedStr = SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID);
+    const isHard = document.getElementById('chk-hard-mode') ? document.getElementById('chk-hard-mode').checked : false;
+    const encodedSeedStr = SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID, isHard);
     generateGame(encodedSeedStr);
 
     connectMultiplayer();
@@ -510,8 +550,8 @@ function initGame() {
 
     document.getElementById('btn-new-game').onclick = () => {
         if(animationTimeout) clearTimeout(animationTimeout);
-        // Gen seed mới dựa trên thời gian thực
-        generateGame(SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID)); 
+        const isHard = document.getElementById('chk-hard-mode').checked;
+        generateGame(SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID, isHard)); 
     };
 
     // Event buttons phân tích đồ thị Phase 0
@@ -579,10 +619,21 @@ function setupInputHandling() {
                             selectedFixNode = null;
                             currentFixConnections++;
                             
-                            // Check lại xem đã hết đỉnh lẻ chưa (hoặc còn <= 2 là đạt Đường Euler)
                             let oddCount = 0;
-                            for (let [node, edges] of adjacencyList.entries()) {
-                                if (edges.length % 2 !== 0) oddCount++;
+                            if (currentGraphGen && currentGraphGen.isHardMode) {
+                                let inDegree = new Array(currentGraphGen.nodeCount).fill(0);
+                                let outDegree = new Array(currentGraphGen.nodeCount).fill(0);
+                                for (const [node, neighbors] of adjacencyList.entries()) {
+                                    outDegree[node] = neighbors.length;
+                                    for (let val of neighbors) inDegree[val]++;
+                                }
+                                for (let i = 0; i < inDegree.length; i++) {
+                                    if (inDegree[i] !== outDegree[i]) oddCount++;
+                                }
+                            } else {
+                                for (let [node, edges] of adjacencyList.entries()) {
+                                    if (edges.length % 2 !== 0) oddCount++;
+                                }
                             }
                             if (oddCount <= 2) {
                                 alert("Mạng lưới đã ổn định tiêu chuẩn năng lượng! Bây giờ hãy tìm đường đi...");
@@ -726,12 +777,13 @@ function undoMove() {
 }
 
 function checkWinCondition() {
-    // Đếm tổng số cạnh trong List (đồ thị vô hướng)
     let totalEdges = 0;
     for (const [node, neighbors] of adjacencyList.entries()) {
         totalEdges += neighbors.length;
     }
-    totalEdges /= 2; // Chia 2 vì mỗi cạnh lưu 2 lần
+    if (!currentGraphGen || !currentGraphGen.isHardMode) {
+        totalEdges /= 2; // Chia 2 vì mỗi cạnh lưu 2 lần ở chế độ vô hướng
+    }
 
     if (visitedEdges.size === totalEdges) {
         if(timerInterval) clearInterval(timerInterval);
@@ -786,6 +838,27 @@ function render() {
             }
             
             ctx.stroke();
+            
+            // Vẽ mũi tên điều hướng ở chính giữa cạnh nếu ở chế độ Hard Mode
+            if (currentGraphGen && currentGraphGen.isHardMode) {
+                const midX = (fromNode.x + toNode.x) / 2;
+                const midY = (fromNode.y + toNode.y) / 2;
+                const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x);
+                
+                ctx.beginPath();
+                ctx.moveTo(midX + 5 * Math.cos(angle), midY + 5 * Math.sin(angle)); // Nhích tới trước để mũi tên đúng tâm
+                ctx.lineTo(midX - 10 * Math.cos(angle - Math.PI / 6), midY - 10 * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(midX - 10 * Math.cos(angle + Math.PI / 6), midY - 10 * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                
+                ctx.fillStyle = visitedEdges.has(edgeKey) ? '#f59e0b' : '#94a3b8';
+                if (visitedEdges.has(edgeKey)) {
+                     ctx.shadowBlur = 10;
+                     ctx.shadowColor = '#f59e0b';
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0; // reset
+            }
         }
     }
     
@@ -812,7 +885,15 @@ function render() {
         // Kiểm tra xem có phải đỉnh lẻ ở phase fixing không
         let isOdd = false;
         if (currentPhase === PHASE_FIXING) {
-            isOdd = adjacencyList.get(n.id).length % 2 !== 0;
+            if (currentGraphGen && currentGraphGen.isHardMode) {
+                let inDegree = 0, outDegree = adjacencyList.get(n.id).length;
+                for (const [modNode, neighbors] of adjacencyList.entries()) {
+                    if (neighbors.includes(n.id)) inDegree++;
+                }
+                isOdd = inDegree !== outDegree;
+            } else {
+                isOdd = adjacencyList.get(n.id).length % 2 !== 0;
+            }
         }
 
         if (currentPhase === PHASE_FIXING && selectedFixNode === n.id) {
