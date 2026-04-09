@@ -1,6 +1,41 @@
 import { mulberry32, SeedManager } from './core/prng.js';
 import { GraphGenerator } from './core/graph.js';
 
+// Override global alert to show in document instead of browser popup
+window.alert = function(msg) {
+    let container = document.getElementById('custom-alert-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'custom-alert-container';
+        document.body.appendChild(container);
+    }
+    
+    const alertBox = document.createElement('div');
+    alertBox.className = 'custom-alert-box';
+    alertBox.innerText = msg;
+    container.appendChild(alertBox);
+    
+    // Animate in
+    requestAnimationFrame(() => {
+        // Need a tiny delay for transition to trigger properly after append
+        setTimeout(() => {
+            alertBox.style.opacity = '1';
+            alertBox.style.transform = 'translateY(0)';
+        }, 10);
+    });
+    
+    // Remove after 5 seconds
+    setTimeout(() => {
+        alertBox.style.opacity = '0';
+        alertBox.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (alertBox.parentElement) {
+                alertBox.parentElement.removeChild(alertBox);
+            }
+        }, 300);
+    }, 5000);
+};
+
 // --- Game Configuration ---
 const LEVEL_ID = 1;
 const COMPLEXITY = 5;
@@ -26,6 +61,9 @@ const PHASE_ANALYSIS = 0;
 const PHASE_DRAWING = 1;
 const PHASE_FIXING = 2; // Giai đoạn tự nối đỉnh
 let currentPhase = PHASE_ANALYSIS;
+
+// Sidebar UI State
+let isMatrixView = false;
 
 // Fix State (Tự gắn đỉnh)
 let selectedFixNode = null;
@@ -64,14 +102,42 @@ function connectMultiplayer() {
         socket = io();
         
         socket.on('ROOM_UPDATE', (data) => {
-            document.getElementById('room-status').innerText = `Players: ${data.playerCount}`;
-            document.getElementById('btn-start-mp').style.display = data.playerCount > 0 ? 'inline-block' : 'none';
+            document.getElementById('room-status').innerText = `Players: ${data.players.length}`;
+            
+            const playerListDiv = document.getElementById('player-list');
+            playerListDiv.innerHTML = '';
+            
+            const isMeHost = socket.id === data.hostId;
+            document.getElementById('btn-start-mp').style.display = (isMeHost && data.players.length >= 1) ? 'inline-block' : 'none';
+
+            data.players.forEach(p => {
+                const li = document.createElement('li');
+                li.className = 'player-item';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'player-name' + (p.id === data.hostId ? ' host' : '');
+                nameSpan.innerText = p.nickname + (p.id === socket.id ? ' (Bạn)' : '') + (p.id === data.hostId ? ' 👑' : '');
+                li.appendChild(nameSpan);
+                
+                if (isMeHost && p.id !== socket.id) {
+                    const kickBtn = document.createElement('button');
+                    kickBtn.className = 'kick-btn';
+                    kickBtn.innerText = 'Kick';
+                    kickBtn.onclick = () => {
+                        socket.emit('KICK_PLAYER', { roomId: currentRoomId, targetId: p.id });
+                    };
+                    li.appendChild(kickBtn);
+                }
+                
+                playerListDiv.appendChild(li);
+            });
         });
 
         socket.on('ROOM_CREATED', (code) => {
             document.getElementById('room-input').value = code;
             currentRoomId = code;
-            socket.emit('JOIN_ROOM', code);
+            const nickname = document.getElementById('nickname-input').value.trim();
+            socket.emit('JOIN_ROOM', { roomId: code, nickname });
             document.getElementById('room-status').innerText = 'Đang chờ...';
         });
 
@@ -87,6 +153,21 @@ function connectMultiplayer() {
             generateGame(data.seedStr);
         });
 
+        socket.on('JOIN_ERROR', (msg) => {
+            alert(msg);
+            document.getElementById('room-status').innerText = 'Lỗi: ' + msg;
+            currentRoomId = null; // Clear room id
+            document.getElementById('player-list').innerHTML = '';
+        });
+
+        socket.on('KICKED', () => {
+            alert("Bạn đã bị Chủ phòng đuổi khỏi phòng!");
+            currentRoomId = null;
+            document.getElementById('room-status').innerText = "Đã bị đuổi";
+            document.getElementById('player-list').innerHTML = '';
+            document.getElementById('btn-start-mp').style.display = 'none';
+        });
+        
         socket.on('OPPONENT_FINISHED', (data) => {
             alert(`Đối thủ đã hoàn thành xong trong ${data.timeTaken}ms! Bạn đã thua.`);
             if(timerInterval) clearInterval(timerInterval);
@@ -98,17 +179,27 @@ function connectMultiplayer() {
     }
 
     document.getElementById('btn-create-room').onclick = () => {
+        const nickname = document.getElementById('nickname-input').value.trim();
+        if (!nickname) {
+            alert('Vui lòng nhập Tên của bạn!');
+            return;
+        }
         if(socket) {
-            socket.emit('CREATE_ROOM');
+            socket.emit('CREATE_ROOM', { nickname });
             document.getElementById('room-status').innerText = 'Đang tạo phòng...';
         }
     };
 
     document.getElementById('btn-join').onclick = () => {
-        const roomId = document.getElementById('room-input').value;
+        const nickname = document.getElementById('nickname-input').value.trim();
+        if (!nickname) {
+            alert('Vui lòng nhập Tên của bạn!');
+            return;
+        }
+        const roomId = document.getElementById('room-input').value.trim();
         if(roomId && socket) {
             currentRoomId = roomId;
-            socket.emit('JOIN_ROOM', roomId);
+            socket.emit('JOIN_ROOM', { roomId, nickname });
             document.getElementById('room-status').innerText = 'Đang chờ...';
         }
     };
@@ -160,6 +251,99 @@ function generateGame(encodedSeedStr) {
     document.getElementById('btn-hint').style.display = 'none';
 
     render();
+    renderGraphDataInfo();
+}
+
+// Rendering Data Panel cho Sidebar Trái
+function renderGraphDataInfo() {
+    if (!currentGraphGen) return;
+    
+    // 1. Render Adjacency List
+    const ul = document.getElementById('adjacency-list-ul');
+    ul.innerHTML = '';
+    
+    const entries = Array.from(adjacencyList.entries()).sort((a,b) => a[0] - b[0]);
+        
+    for (const [node, neighbors] of entries) {
+        let sortedNeighbors = [...neighbors].sort((a,b) => a - b);
+        let li = document.createElement('li');
+        li.className = 'routing-item';
+        li.innerHTML = `<strong>Đỉnh ${node}</strong> ➔ ${sortedNeighbors.join(', ')}`;
+        ul.appendChild(li);
+    }
+    
+    // 2. Render Adjacency Matrix
+    const table = document.getElementById('adjacency-matrix-table');
+    table.innerHTML = '';
+    
+    let thead = document.createElement('thead');
+    let htr = document.createElement('tr');
+    htr.appendChild(document.createElement('th')); // empty corner
+    for (let i = 0; i < currentGraphGen.nodeCount; i++) {
+        let th = document.createElement('th');
+        th.innerText = i;
+        htr.appendChild(th);
+    }
+    thead.appendChild(htr);
+    table.appendChild(thead);
+    
+    let tbody = document.createElement('tbody');
+    for (let i = 0; i < currentGraphGen.nodeCount; i++) {
+        let tr = document.createElement('tr');
+        let thRow = document.createElement('th');
+        thRow.innerText = i;
+        tr.appendChild(thRow);
+        
+        for (let j = 0; j < currentGraphGen.nodeCount; j++) {
+            let td = document.createElement('td');
+            td.id = `matrix-cell-${i}-${j}`;
+            let hasEdge = adjacencyList.get(i).includes(j);
+            td.innerText = hasEdge ? '1' : '0';
+            td.className = hasEdge ? 'm-conn' : 'm-none';
+            tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    
+    // Khởi tạo trạng thái lần đầu
+    updateSidebarGraphUI();
+}
+
+function updateSidebarGraphUI() {
+    if (!currentGraphGen) return;
+
+    // 1. Cập nhật chuỗi Đường đi hiện tại
+    const pathStrEl = document.getElementById('path-string');
+    if (pathStack.length === 0) {
+        pathStrEl.innerText = 'Chưa có';
+    } else {
+        pathStrEl.innerText = pathStack.join(' ➔ ');
+    }
+    
+    // 2. Cập nhật Ma trận đồ thị nếu đã đi qua
+    for (let i = 0; i < currentGraphGen.nodeCount; i++) {
+        if (!adjacencyList.has(i)) continue;
+        for (let j = 0; j < currentGraphGen.nodeCount; j++) {
+            const td = document.getElementById(`matrix-cell-${i}-${j}`);
+            if (!td) continue;
+
+            const isEdge = adjacencyList.get(i).includes(j);
+            if (isEdge) {
+                const min = Math.min(i, j);
+                const max = Math.max(i, j);
+                const edgeKey = `${min}-${max}`;
+                
+                if (visitedEdges && visitedEdges.has(edgeKey)) {
+                    td.className = 'm-visited';
+                    td.innerText = 'x'; // Mờ và biến thành x
+                } else {
+                    td.className = 'm-conn';
+                    td.innerText = '1';
+                }
+            }
+        }
+    }
 }
 
 // Logic kiểm tra Giai đoạn 1: Phân tích Đồ thị
@@ -334,6 +518,19 @@ function initGame() {
     document.getElementById('btn-guess-circuit').onclick = () => checkGraphTypeGuess(0);
     document.getElementById('btn-guess-path').onclick = () => checkGraphTypeGuess(1);
     document.getElementById('btn-guess-none').onclick = () => checkGraphTypeGuess(2);
+
+    document.getElementById('btn-toggle-graph-view').onclick = () => {
+        isMatrixView = !isMatrixView;
+        if (isMatrixView) {
+            document.getElementById('adjacency-list-view').style.display = 'none';
+            document.getElementById('adjacency-matrix-view').style.display = 'block';
+            document.getElementById('btn-toggle-graph-view').innerText = 'Hiển thị Danh sách';
+        } else {
+            document.getElementById('adjacency-list-view').style.display = 'block';
+            document.getElementById('adjacency-matrix-view').style.display = 'none';
+            document.getElementById('btn-toggle-graph-view').innerText = 'Hiển thị Ma trận';
+        }
+    };
 
     // Setup input listeners
     setupInputHandling();
@@ -659,6 +856,9 @@ function render() {
         ctx.textBaseline = 'middle';
         ctx.fillText(n.id, n.x, n.y);
     }
+    
+    // Cập nhật ma trận và đường đi mỗi khi có thay đổi render
+    updateSidebarGraphUI();
 }
 
 window.addEventListener('load', () => {

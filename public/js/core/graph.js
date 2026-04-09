@@ -3,10 +3,11 @@ export class GraphGenerator {
     // rawNumericSeed: Số nguyên để cấp cho PRNG (mulberry32).
     // nodeCount: Số lượng đỉnh cần vẽ.
     // complexity: Chỉ số về chi tiết hoặc số cung (edges).
-    constructor(nodeCount, complexity, rawNumericSeed) {
+    constructor(nodeCount, complexity, rawNumericSeed, isHardMode = false) {
         this.nodeCount = nodeCount;
         this.complexity = complexity;
         this.seed = rawNumericSeed;
+        this.isHardMode = isHardMode;
         
         // Khởi tạo đồ thị mảng kề (Adjacency List)
         this.adjacencyList = new Map();
@@ -32,14 +33,18 @@ export class GraphGenerator {
         return Math.floor(this.random() * (max - min + 1)) + min;
     }
 
-    // Thêm cạnh vô hướng
+    // Thêm cạnh
     addEdge(v1, v2) {
         if (v1 === v2) return; // Không vẽ cạnh self-loop cho game
         
         // Kiểm tra tránh trùng lặp nếu chưa cần thiết
         if (!this.adjacencyList.get(v1).includes(v2)) {
             this.adjacencyList.get(v1).push(v2);
-            this.adjacencyList.get(v2).push(v1);
+            if (!this.isHardMode) {
+                if (!this.adjacencyList.get(v2).includes(v1)) {
+                    this.adjacencyList.get(v2).push(v1);
+                }
+            }
         }
     }
 
@@ -63,7 +68,9 @@ export class GraphGenerator {
         let adjU = this.adjacencyList.get(u);
         let adjV = this.adjacencyList.get(v);
         if (adjU.includes(v)) adjU.splice(adjU.indexOf(v), 1);
-        if (adjV.includes(u)) adjV.splice(adjV.indexOf(u), 1);
+        if (!this.isHardMode) {
+            if (adjV.includes(u)) adjV.splice(adjV.indexOf(u), 1);
+        }
     }
 
     // Bước 2: Thêm các cạnh ngẫu nhiên tạo vòng lặp phụ 
@@ -109,7 +116,9 @@ export class GraphGenerator {
             let allEdges = [];
             for (let [node, neighbors] of this.adjacencyList.entries()) {
                 for(let n of neighbors) {
-                    if (node < n) allEdges.push([node, n]);
+                    if (this.isHardMode || node < n) {
+                        allEdges.push([node, n]);
+                    }
                 }
             }
 
@@ -123,13 +132,21 @@ export class GraphGenerator {
             for (let [u, v] of allEdges) {
                 this._removeEdge(u, v);
                 
-                // BFS check liên thông
+                // BFS check liên thông YẾU (Weakly Connected)
                 let visited = new Set();
                 let queue = [0];
                 visited.add(0);
                 while(queue.length > 0) {
                     let curr = queue.shift();
-                    for(let n of this.adjacencyList.get(curr)) {
+                    
+                    let neighbors = [...this.adjacencyList.get(curr)];
+                    for (let [node, edges] of this.adjacencyList.entries()) {
+                        if (edges.includes(curr) && !neighbors.includes(node)) {
+                            neighbors.push(node);
+                        }
+                    }
+                    
+                    for(let n of neighbors) {
                         if(!visited.has(n)) {
                             visited.add(n);
                             queue.push(n);
@@ -163,16 +180,33 @@ export class GraphGenerator {
 
         if (adj.size === 0) return [];
 
-        // Tìm điểm xuất phát: Ưu tiên đỉnh bậc lẻ (nếu có đường đi Euler)
         let startNode = 0;
-        let oddNodes = [];
-        for (let [node, count] of edgeCount.entries()) {
-            if (count % 2 !== 0) {
-                oddNodes.push(node);
+        
+        if (this.isHardMode) {
+            let inDegree = new Array(this.nodeCount).fill(0);
+            let outDegree = new Array(this.nodeCount).fill(0);
+            for (let [u, neighbors] of adj.entries()) {
+                outDegree[u] = neighbors.length;
+                for (let v of neighbors) {
+                    inDegree[v]++;
+                }
             }
-        }
-        if (oddNodes.length > 0) {
-            startNode = oddNodes[0];
+            for (let i = 0; i < this.nodeCount; i++) {
+                if (outDegree[i] - inDegree[i] === 1) {
+                    startNode = i;
+                    break;
+                }
+            }
+        } else {
+            let oddNodes = [];
+            for (let [node, count] of edgeCount.entries()) {
+                if (count % 2 !== 0) {
+                    oddNodes.push(node);
+                }
+            }
+            if (oddNodes.length > 0) {
+                startNode = oddNodes[0];
+            }
         }
 
         let currPath = [startNode];
@@ -186,11 +220,13 @@ export class GraphGenerator {
                 edgeCount.set(currNode, edgeCount.get(currNode) - 1);
                 
                 // Cần xóa cạnh theo cả chiều ngược lại (vì là đồ thị vô hướng)
-                let nextAdj = adj.get(nextNode);
-                let idx = nextAdj.indexOf(currNode);
-                if (idx > -1) {
-                    nextAdj.splice(idx, 1);
-                    edgeCount.set(nextNode, edgeCount.get(nextNode) - 1);
+                if (!this.isHardMode) {
+                    let nextAdj = adj.get(nextNode);
+                    let idx = nextAdj.indexOf(currNode);
+                    if (idx > -1) {
+                        nextAdj.splice(idx, 1);
+                        edgeCount.set(nextNode, edgeCount.get(nextNode) - 1);
+                    }
                 }
 
                 currPath.push(nextNode);
@@ -205,35 +241,91 @@ export class GraphGenerator {
     // Tùy chọn: Sinh tọa độ vật lý ngẫu nhiên cho Render
     // Dàn đều điểm theo hình tròn + độ nhiễu ngẫu nhiên nhỏ để các điểm không bị quá sát nhau
     generateLayout(width, height, padding) {
-        const nodesData = [];
         const centerX = width / 2;
         const centerY = height / 2;
         const radius = Math.min(centerX, centerY) - padding - 40; // Trừ hao để sát mép
 
-        let angles = [];
-        for (let i=0; i<this.nodeCount; i++) {
-            angles.push((i / this.nodeCount) * Math.PI * 2);
-        }
-        
-        // Shuffle lại vị trí mảng để các NodeId không bị xếp tròn đều theo thứ tự 0,1,2..
-        for (let i = angles.length - 1; i > 0; i--) {
-            const j = this._randInt(0, i);
-            [angles[i], angles[j]] = [angles[j], angles[i]];
+        // Hàm tính khoảng cách từ điểm tới đoạn thẳng
+        const pointSegmentDistance = (px, py, x1, y1, x2, y2) => {
+            const l2 = (x2 - x1)**2 + (y2 - y1)**2;
+            if (l2 === 0) return Math.hypot(px - x1, py - y1);
+            let t = ((px - x1)*(x2 - x1) + (py - y1)*(y2 - y1)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+        };
+
+        const maxAttempts = 50;
+        let bestLayout = null;
+        let minPenalty = Infinity;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const nodesData = [];
+            let angles = [];
+            for (let i=0; i<this.nodeCount; i++) {
+                angles.push((i / this.nodeCount) * Math.PI * 2);
+            }
+            
+            // Shuffle lại vị trí mảng để các NodeId không bị xếp tròn đều theo thứ tự 0,1,2..
+            for (let i = angles.length - 1; i > 0; i--) {
+                const j = this._randInt(0, i);
+                [angles[i], angles[j]] = [angles[j], angles[i]];
+            }
+
+            for (let i = 0; i < this.nodeCount; i++) {
+                let angle = angles[i];
+                
+                // Random khoảng cách xa tâm một chút (nhưng không đẩy vào tâm)
+                // Lùi hoặc tiến 15% bán kính
+                let rNoise = radius * (1.0 + (this.random() * 0.3 - 0.15));
+                
+                nodesData.push({
+                    id: i,
+                    x: centerX + rNoise * Math.cos(angle),
+                    y: centerY + rNoise * Math.sin(angle)
+                });
+            }
+
+            // --- KIỂM TRA OVERLAP VỚI CẠNH ---
+            let hasCollision = false;
+            let penalty = 0;
+            const safeDistance = 35; // Nút có bán kính 14, nên 35 là đủ an toàn không bị cắt ngang
+
+            let edgesChecked = new Set();
+            for (let u = 0; u < this.nodeCount; u++) {
+                for (let v of this.adjacencyList.get(u)) {
+                    if (u < v) {
+                        const edgeKey = u + "-" + v;
+                        if (edgesChecked.has(edgeKey)) continue;
+                        edgesChecked.add(edgeKey);
+
+                        const n1 = nodesData.find(n => n.id === u);
+                        const n2 = nodesData.find(n => n.id === v);
+
+                        for (let k = 0; k < this.nodeCount; k++) {
+                            if (k !== u && k !== v) {
+                                const nk = nodesData.find(n => n.id === k);
+                                const dist = pointSegmentDistance(nk.x, nk.y, n1.x, n1.y, n2.x, n2.y);
+                                if (dist < safeDistance) {
+                                    hasCollision = true;
+                                    penalty += (safeDistance - dist);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!hasCollision) {
+                return nodesData; // Tìm được layout hoàn hảo
+            }
+
+            // Lưu lại layout ít lỗi nhất để backup
+            if (penalty < minPenalty) {
+                minPenalty = penalty;
+                bestLayout = nodesData;
+            }
         }
 
-        for (let i = 0; i < this.nodeCount; i++) {
-            let angle = angles[i];
-            
-            // Random khoảng cách xa tâm một chút (nhưng không đẩy vào tâm)
-            // Lùi hoặc tiến 15% bán kính
-            let rNoise = radius * (1.0 + (this.random() * 0.3 - 0.15));
-            
-            nodesData.push({
-                id: i,
-                x: centerX + rNoise * Math.cos(angle),
-                y: centerY + rNoise * Math.sin(angle)
-            });
-        }
-        return nodesData;
+        return bestLayout;
     }
 }

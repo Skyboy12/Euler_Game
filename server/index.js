@@ -114,35 +114,66 @@ function saveReplay(roomId, playerId, seedStr, timeTaken, pathStack) {
 io.on('connection', (socket) => {
     console.log(`[+] Client connected: ${socket.id}`);
 
-    socket.on('CREATE_ROOM', () => {
+    socket.on('CREATE_ROOM', (data) => {
         let code;
         do {
             code = Math.floor(1000 + Math.random() * 9000).toString();
         } while (rooms[code]);
+        
+        // Khởi tạo phòng mới
+        rooms[code] = {
+            hostId: socket.id,
+            players: [],
+            gameStarted: false,
+            seedStr: null,
+            startTime: 0
+        };
+        
         socket.emit('ROOM_CREATED', code);
     });
 
-    socket.on('JOIN_ROOM', (roomId) => {
+    socket.on('JOIN_ROOM', (data) => {
+        const { roomId, nickname } = data;
+        
+        if (!rooms[roomId]) {
+            socket.emit('JOIN_ERROR', 'Phòng không tồn tại!');
+            return;
+        }
+
         socket.join(roomId);
         console.log(`[Rooms] Socket ${socket.id} joined room: ${roomId}`);
         
-        if (!rooms[roomId]) {
-            rooms[roomId] = {
-                players: new Set(),
-                gameStarted: false,
-                seedStr: null,
-                startTime: 0
-            };
+        rooms[roomId].players.push({ id: socket.id, nickname: nickname });
+        io.to(roomId).emit('ROOM_UPDATE', { 
+            hostId: rooms[roomId].hostId,
+            players: rooms[roomId].players 
+        });
+    });
+
+    socket.on('KICK_PLAYER', (data) => {
+        const { roomId, targetId } = data;
+        if (rooms[roomId] && rooms[roomId].hostId === socket.id) {
+            rooms[roomId].players = rooms[roomId].players.filter(p => p.id !== targetId);
+            
+            io.to(targetId).emit('KICKED');
+            
+            const targetSocket = io.sockets.sockets.get(targetId);
+            if (targetSocket) {
+                targetSocket.leave(roomId);
+            }
+            
+            io.to(roomId).emit('ROOM_UPDATE', { 
+                hostId: rooms[roomId].hostId,
+                players: rooms[roomId].players
+            });
         }
-        rooms[roomId].players.add(socket.id);
-        io.to(roomId).emit('ROOM_UPDATE', { playerCount: rooms[roomId].players.size });
     });
 
     socket.on('START_GAME', (data) => {
-        const { roomId, nodeCount, complexity, levelId } = data;
+        const { roomId, nodeCount, complexity, levelId, isHardMode = false } = data;
         
         // Sử dụng hàm SeedManager chung
-        const seedStr = SeedManager.encode(nodeCount, complexity, levelId);
+        const seedStr = SeedManager.encode(nodeCount, complexity, levelId, isHardMode);
         const timestamp = Date.now();
 
         if (rooms[roomId]) {
@@ -186,9 +217,22 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`[-] Client disconnected: ${socket.id}`);
         for (const [roomId, roomData] of Object.entries(rooms)) {
-            if (roomData.players.has(socket.id)) {
-                roomData.players.delete(socket.id);
-                io.to(roomId).emit('ROOM_UPDATE', { playerCount: roomData.players.size });
+            const index = roomData.players.findIndex(p => p.id === socket.id);
+            if (index !== -1) {
+                roomData.players.splice(index, 1);
+                
+                if (roomData.hostId === socket.id && roomData.players.length > 0) {
+                    roomData.hostId = roomData.players[0].id;
+                }
+                
+                io.to(roomId).emit('ROOM_UPDATE', { 
+                    hostId: roomData.hostId, 
+                    players: roomData.players 
+                });
+                
+                if (roomData.players.length === 0) {
+                    delete rooms[roomId];
+                }
             }
         }
     });
