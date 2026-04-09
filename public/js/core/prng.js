@@ -12,26 +12,36 @@ export function mulberry32(a) {
 // Seed Decoder & Encoder: Nén dữ liệu (Ví dụ: số đỉnh, độ phức tạp) sang chuỗi ngắn gọn.
 export class SeedManager {
     // encode thông số từ các tham số để tạo seed string.
-    static encode(nodeCount, complexity, levelId) {
+    static encode(nodeCount, complexity, levelId, isHardMode = false) {
         // Tạo một mã random thật sự bằng Timestamp kết hợp Math.random
         const rawEntropy = (Date.now() % 100000) + Math.floor(Math.random() * 100000);
         // Gộp các giá trị thành 1 số nguyên lớn: raw + levelId + nodeCount + complexity
         const combined = (levelId * 10000000) + ((nodeCount * 100) + complexity) * 100000 + rawEntropy;
-        return combined.toString(36).toUpperCase();
+        let str = combined.toString(36).toUpperCase();
+        if (isHardMode) str += "-H";
+        return str;
     }
 
     // decode seed string ra các biến cấu hình ban đầu, kèm một initial integer seed.
     static decode(seedStr) {
+        let isHardMode = false;
+        if (seedStr.endsWith("-H")) {
+            isHardMode = true;
+            seedStr = seedStr.slice(0, -2);
+        }
+        
         const val = parseInt(seedStr, 36);
         const rawEntropy = val % 100000;
         const remaining = Math.floor(val / 100000);
         const complexity = remaining % 100;
         const nodeCount = Math.floor(remaining / 100) % 100;
         const levelId = Math.floor(remaining / 10000);
+        
         return {
             levelId,
             nodeCount,
             complexity,
+            isHardMode,
             rawNumericSeed: rawEntropy + levelId + nodeCount // Seed cuối cho thuật toán sinh map
         };
     }
