@@ -52,7 +52,9 @@ let canvas, ctx;
 
 // Player Interaction State
 let visitedEdges = new Set();
-let pathStack = []; // Lưu ID của các đỉnh đi qua: [0, 2, 5...]
+let invalidEdges = new Set(); 
+let pathStack = []; 
+let displayPathHistory = []; // Dùng riêng cho Debug Mode hiển thị text đường đi
 let isDragging = false;
 let mousePos = null;
 
@@ -81,6 +83,7 @@ let socket = null;
 let currentRoomId = null;
 let gameStartTime = 0;
 let timerInterval = null;
+let isDebugPathMode = false;
 
 function getEdgeKey(u, v) {
     if (currentGraphGen && currentGraphGen.isHardMode) {
@@ -112,6 +115,7 @@ function connectMultiplayer() {
             
             const isMeHost = socket.id === data.hostId;
             document.getElementById('btn-start-mp').style.display = (isMeHost && data.players.length >= 1) ? 'inline-block' : 'none';
+            document.getElementById('btn-disconnect-mp').style.display = 'inline-block';
 
             data.players.forEach(p => {
                 const li = document.createElement('li');
@@ -165,10 +169,7 @@ function connectMultiplayer() {
 
         socket.on('KICKED', () => {
             alert("Bạn đã bị Chủ phòng đuổi khỏi phòng!");
-            currentRoomId = null;
-            document.getElementById('room-status').innerText = "Đã bị đuổi";
-            document.getElementById('player-list').innerHTML = '';
-            document.getElementById('btn-start-mp').style.display = 'none';
+            resetMultiplayerUI();
         });
         
         socket.on('OPPONENT_FINISHED', (data) => {
@@ -219,6 +220,27 @@ function connectMultiplayer() {
             });
         }
     };
+
+    document.getElementById('btn-disconnect-mp').onclick = () => {
+        if(socket && currentRoomId) {
+            socket.emit('LEAVE_ROOM', { roomId: currentRoomId });
+            resetMultiplayerUI();
+        }
+    };
+}
+
+function resetMultiplayerUI() {
+    currentRoomId = null;
+    document.getElementById('room-status').innerText = 'Chưa vào phòng';
+    document.getElementById('player-list').innerHTML = '';
+    document.getElementById('btn-start-mp').style.display = 'none';
+    document.getElementById('btn-disconnect-mp').style.display = 'none';
+    document.getElementById('room-input').value = '';
+    
+    // Nếu game đang chạy, có thể reset về single player hoặc dừng lại
+    if(timerInterval) clearInterval(timerInterval);
+    document.getElementById('timer-display').innerText = '00:00';
+    gameStartTime = 0;
 }
 
 function generateGame(encodedSeedStr) {
@@ -237,9 +259,14 @@ function generateGame(encodedSeedStr) {
     ctx = canvas.getContext('2d');
     nodes = currentGraphGen.generateLayout(canvas.width, canvas.height, graphArea.padding);
 
-    // Xóa state cũ
+    // Về Giai đoạn Phân tích
+    currentPhase = PHASE_ANALYSIS;
+    
+    // Reset state
     visitedEdges.clear();
+    invalidEdges.clear();
     pathStack = [];
+    displayPathHistory = [];
     isDragging = false;
     
     // Xóa state tự build
@@ -320,7 +347,15 @@ function updateSidebarGraphUI() {
 
     // 1. Cập nhật chuỗi Đường đi hiện tại
     const pathStrEl = document.getElementById('path-string');
-    if (pathStack.length === 0) {
+    if (isDebugPathMode && displayPathHistory.length > 0) {
+        // Render với format Debug: tô đỏ các node backtrack
+        pathStrEl.innerHTML = displayPathHistory.map(node => {
+            if (node.status === 'invalid') {
+                return `<span class="path-node-invalid">(${node.id})</span>`;
+            }
+            return `<span>${node.id}</span>`;
+        }).join(' ➔ ');
+    } else if (pathStack.length === 0) {
         pathStrEl.innerText = 'Chưa có';
     } else {
         pathStrEl.innerText = pathStack.join(' ➔ ');
@@ -380,8 +415,14 @@ function checkGraphTypeGuess(guessedType) {
     else if (oddDegreeCount > 2) actualType = 2; // Không Euler
 
     if (guessedType === actualType) {
-        document.getElementById('analysis-feedback').style.color = '#10b981';
-        document.getElementById('analysis-feedback').innerText = 'Chính xác! Bắt đầu kết nối mạng lưới...';
+        document.getElementById('analysis-feedback').style.color = '#38bdf8'; // Blue for info
+        
+        if (actualType === 2) {
+            document.getElementById('analysis-feedback').innerText = 'Chính xác! Đồ thị này không thể thắp sáng bằng 1 nét. Hãy thực hiện GIAO THỨC SỬA CHỮA!';
+        } else {
+            document.getElementById('analysis-feedback').style.color = '#10b981'; // Green for success
+            document.getElementById('analysis-feedback').innerText = 'Chính xác! Bắt đầu kết nối mạng lưới...';
+        }
         
         if (actualType === 2) {
             // Không phải Euler -> Cho người chơi tự nối
@@ -497,36 +538,78 @@ function countReachableNodesBFS(startNode, adjMap, ignoredEdgeKey) {
 function showHint() {
     if (!currentGraphGen) return;
     
-    // Reset path hiện tại
+    // Reset state
     visitedEdges.clear();
+    invalidEdges.clear();
     pathStack = [];
+    displayPathHistory = [];
     if(animationTimeout) clearTimeout(animationTimeout);
-    
-    // Lấy chu trình Euler đúng bằng Hierholzer
-    const eulerPath = currentGraphGen.findEulerianPath();
-    
-    if (!eulerPath || eulerPath.length === 0) return;
-    
-    // Animation draw từng cạnh một
-    let step = 0;
-    pathStack.push(eulerPath[0]); // Đỉnh xuất phát
-    
-    function animateNext() {
-        if (step >= eulerPath.length - 1) return;
+
+    if (isDebugPathMode) {
+        // --- CHẾ ĐỘ DEBUG ---
+        const debugResult = currentGraphGen.findEulerianPathDebug();
+        const log = debugResult.log;
+        let logStep = 0;
         
-        let u = eulerPath[step];
-        let v = eulerPath[step + 1];
+        const startId = debugResult.finalPath[0] || 0;
+        pathStack.push(startId);
+        displayPathHistory.push({ id: startId, status: 'valid' });
+
+        function animateDebug() {
+            if (logStep >= log.length) {
+                alert("Hoàn tất mô phỏng tìm đường (Debug Mode).");
+                return;
+            }
+
+            const stepData = log[logStep];
+            const edgeKey = getEdgeKey(stepData.u, stepData.v);
+
+            if (stepData.type === 'move') {
+                visitedEdges.add(edgeKey);
+                pathStack.push(stepData.v);
+                displayPathHistory.push({ id: stepData.v, status: 'valid' });
+            } else {
+                // Backtrack: Đổi trạng thái node cuối cùng hoặc add entry mới?
+                // Yêu cầu: "Vẫn hiển thị thứ tự đường đi sai nhưng tô đỏ"
+                // Ta tìm node cuối cùng trong history có id là stepData.v và mark invalid
+                // Tuy nhiên trong DFS, log backtrack v -> u (tức là v là node vừa fail)
+                for(let i = displayPathHistory.length - 1; i >= 0; i--) {
+                    if(displayPathHistory[i].id === stepData.v && displayPathHistory[i].status === 'valid') {
+                        displayPathHistory[i].status = 'invalid';
+                        break;
+                    }
+                }
+                
+                visitedEdges.delete(edgeKey);
+                invalidEdges.add(edgeKey); 
+                pathStack.pop();
+            }
+
+            render();
+            logStep++;
+            animationTimeout = setTimeout(animateDebug, 200); 
+        }
+        animateDebug();
+
+    } else {
+        // --- CHẾ ĐỘ THƯỜNG ---
+        const eulerPath = currentGraphGen.findEulerianPath();
+        if (!eulerPath || eulerPath.length === 0) return;
         
-        visitedEdges.add(getEdgeKey(u, v));
-        pathStack.push(v);
-        
-        render(); // Force redraw UI
-        
-        step++;
-        animationTimeout = setTimeout(animateNext, 300); // Tốc độ delay giữa các bước vẽ: 300ms
+        let step = 0;
+        pathStack.push(eulerPath[0]);
+        function animateNext() {
+            if (step >= eulerPath.length - 1) return;
+            let u = eulerPath[step];
+            let v = eulerPath[step + 1];
+            visitedEdges.add(getEdgeKey(u, v));
+            pathStack.push(v);
+            render();
+            step++;
+            animationTimeout = setTimeout(animateNext, 300);
+        }
+        animateNext();
     }
-    
-    animateNext();
 }
 
 function initGame() {
@@ -535,16 +618,37 @@ function initGame() {
     const encodedSeedStr = SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID, isHard);
     generateGame(encodedSeedStr);
 
+    // Thêm listener cho checkbox hard mode để tự đổi map khi toggle (chỉ ở mode local)
+    const chkHard = document.getElementById('chk-hard-mode');
+    if (chkHard) {
+        chkHard.onchange = () => {
+            if (!currentRoomId) {
+                const isHard = chkHard.checked;
+                generateGame(SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID, isHard));
+            } else {
+                alert("Bạn đang trong phòng Multiplayer. Host sẽ quyết định chế độ chơi!");
+                // Rollback check if not host? Actually host usually changes it.
+            }
+        };
+    }
+
     connectMultiplayer();
 
     // Event Listeners cho nút local
     document.getElementById('btn-undo').onclick = undoMove;
     document.getElementById('btn-hint').onclick = showHint;
+    
+    const chkDebug = document.getElementById('chk-debug-path');
+    if (chkDebug) {
+        chkDebug.onchange = () => { isDebugPathMode = chkDebug.checked; };
+    }
+
     document.getElementById('btn-restart').onclick = () => {
         if(animationTimeout) clearTimeout(animationTimeout);
         pathStack = [];
         visitedEdges.clear();
-        failCount = 0; // Reset fail khi vẽ lại từ đầu chặng
+        invalidEdges.clear();
+        failCount = 0; // Reset fail
         render();
     };
 
@@ -665,6 +769,7 @@ function setupInputHandling() {
                     selectedFixNode = null; // Bấm lại chính nó -> Hủy chọn
                 }
                 render();
+                renderGraphDataInfo();
             }
             return;
         }
@@ -827,17 +932,24 @@ function render() {
             
             // Highlight nếu cạnh đã đi qua
             if (visitedEdges.has(edgeKey)) {
-                ctx.strokeStyle = '#f59e0b'; // Line màu cam/vàng nêon
+                ctx.strokeStyle = '#f59e0b';
                 ctx.shadowBlur = 10;
                 ctx.shadowColor = '#f59e0b';
                 ctx.lineWidth = 4;
+            } else if (invalidEdges.has(edgeKey)) {
+                // CẠNH SAI (BACKTRACKED)
+                ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; 
+                ctx.setLineDash([5, 5]); 
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 0;
             } else {
-                ctx.strokeStyle = '#334155'; // Line nền tối màu
+                ctx.strokeStyle = '#334155';
                 ctx.shadowBlur = 0;
                 ctx.lineWidth = 3;
             }
             
             ctx.stroke();
+            ctx.setLineDash([]); // Reset
             
             // Vẽ mũi tên điều hướng ở chính giữa cạnh nếu ở chế độ Hard Mode
             if (currentGraphGen && currentGraphGen.isHardMode) {

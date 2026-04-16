@@ -165,7 +165,65 @@ export class GraphGenerator {
         return this.adjacencyList;
     }
 
-    // Thuật toán Hierholzer để tìm chu trình / Đường đi Euler
+    // Đã chỉnh sửa: findEulerianPath Debug (trả về log các bước duyệt bao gồm cả backtrack)
+    findEulerianPathDebug() {
+        let adj = new Map();
+        for (let [node, neighbors] of this.adjacencyList.entries()) {
+            adj.set(node, [...neighbors]);
+        }
+        
+        const totalEdges = Array.from(this.adjacencyList.values()).reduce((sum, n) => sum + n.length, 0) / (this.isHardMode ? 1 : 2);
+        const pathLog = []; // [{type: 'move', u, v}, {type: 'backtrack', u, v}]
+        const currentPath = [];
+        const visited = new Set();
+
+        let startNode = 0;
+        if (this.isHardMode) {
+            let inDegree = new Array(this.nodeCount).fill(0);
+            let outDegree = new Array(this.nodeCount).fill(0);
+            for (let [u, neighbors] of this.adjacencyList.entries()) {
+                outDegree[u] = neighbors.length;
+                for (let v of neighbors) inDegree[v]++;
+            }
+            for (let i = 0; i < this.nodeCount; i++) {
+                if (outDegree[i] - inDegree[i] === 1) { startNode = i; break; }
+            }
+        } else {
+            for (let [node, neighbors] of this.adjacencyList.entries()) {
+                if (neighbors.length % 2 !== 0) { startNode = node; break; }
+            }
+        }
+
+        const solve = (u) => {
+            currentPath.push(u);
+            if (visited.size === totalEdges) return true;
+
+            const neighbors = [...adj.get(u)];
+            for (const v of neighbors) {
+                const edgeKey = this.isHardMode ? `${u}-${v}` : (u < v ? `${u}-${v}` : `${v}-${u}`);
+                if (!visited.has(edgeKey)) {
+                    visited.add(edgeKey);
+                    pathLog.push({ type: 'move', u, v });
+                    
+                    if (solve(v)) return true;
+                    
+                    // Backtrack
+                    visited.delete(edgeKey);
+                    pathLog.push({ type: 'backtrack', u, v });
+                }
+            }
+            currentPath.pop();
+            return false;
+        };
+
+        solve(startNode);
+        return {
+            finalPath: currentPath,
+            log: pathLog
+        };
+    }
+
+    // Thuật toán Hierholzer để tìm chu trình / Đường đi Euler (Sử dụng cho hint chính xác)
     findEulerianPath() {
         let adj = new Map();
         // Deep copy danh sách kề

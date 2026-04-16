@@ -21,9 +21,7 @@ const io = new Server(server, {
     transports: ['websocket', 'polling']
 });
 
-// Định nghĩa chuẩn MIME types tránh lỗi strict MIME checking của Nginx/Browser
-express.static.mime.define({'text/css': ['css']});
-express.static.mime.define({'application/javascript': ['js']});
+
 
 app.use(express.static(path.join(__dirname, '../public'), {
     setHeaders: (res, path) => {
@@ -256,6 +254,26 @@ io.on('connection', (socket) => {
             socket.emit('VALIDATION_REJECTED', {
                 reason: check.reason
             });
+        }
+    });
+
+    socket.on('LEAVE_ROOM', (data) => {
+        const { roomId } = data;
+        if (rooms[roomId]) {
+            rooms[roomId].players = rooms[roomId].players.filter(p => p.id !== socket.id);
+            socket.leave(roomId);
+            
+            if (rooms[roomId].players.length === 0) {
+                delete rooms[roomId];
+            } else {
+                if (rooms[roomId].hostId === socket.id) {
+                    rooms[roomId].hostId = rooms[roomId].players[0].id;
+                }
+                io.to(roomId).emit('ROOM_UPDATE', { 
+                    hostId: rooms[roomId].hostId,
+                    players: rooms[roomId].players 
+                });
+            }
         }
     });
 

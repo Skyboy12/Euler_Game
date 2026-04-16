@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Cosmic Weaver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -56,6 +58,11 @@
                     <button id="btn-new-game" style="background-color: #ef4444;">Đổi màn mới</button>
                     <!-- Tạm ẩn nút show đáp án chờ Giai đoạn vẽ -->
                     <button id="btn-hint" style="background-color: #8b5cf6; display: none;">Xem Đáp án</button>
+                    
+                    <div id="debug-toggle-wrap" style="display: inline-flex; align-items: center; gap: 5px; background: #1e293b; padding: 5px 10px; border-radius: 4px; border: 1px solid #475569;">
+                        <input type="checkbox" id="chk-debug-path" style="cursor: pointer;">
+                        <label for="chk-debug-path" style="color: #94a3b8; font-size: 0.85em; cursor: pointer;">Debug</label>
+                    </div>
                 </div>
             </header>
 
@@ -97,6 +104,7 @@
                 </div>
                 
                 <button id="btn-start-mp" style="display:none; background-color: #10b981;">Bắt đầu Game</button>
+                <button id="btn-disconnect-mp" style="display:none; background-color: #64748b; margin-top: 5px;">Thoát Phòng</button>
             </div>
 
             <div id="player-list-container">
