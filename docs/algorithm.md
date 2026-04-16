@@ -206,3 +206,14 @@ function countReachableNodesBFS(startNode, adjMap, ignoredEdgeKey) {
 ## 4. Bố cục không gian chống đan chéo giao diện
 
 Vì tọa độ vẽ các nút nếu tự thả tay hên xui vào hình tròn dễ đi xuyên chéo các cạnh đè lên nhau, phương thức `generateLayout` chạy một bài kiểm tra hình học. Nó tính khoảng cách `pointSegmentDistance` từ điểm tới mọi đoạn thẳng hiện diện. Nếu tìm thấy xung đột vi phạm hình học nhỏ hơn `35px`, nó huỷ quá trình random đó và tạo lại vị trí mới để không có tia nào bắn xuyên qua lòng một ngôi sao không lq.
+
+## 5. Mô hình Debug trực quan & Backtracking
+
+Để hỗ trợ người chơi nghiên cứu giải thuật, game cung cấp chế độ **Debug Mode** cho phép quan sát quá trình chạy DFS (Depth-First Search) thực sự của máy tính thay vì chỉ kết quả cuối cùng:
+
+- **Logic Cây tìm kiếm:** Thay vì list mảng phẳng, hệ thống xây dựng một mô hình cây (`Tree`). Mỗi khi thuật toán rẽ nhánh (`move`), một nút con mới được sinh ra. Khi thuật toán gặp ngõ cụt và lùi lại (`backtrack`), hệ thống đánh dấu toàn bộ nhánh đó là `invalid`.
+- **Biểu diễn ngoặc tối ưu:** Để chuỗi đường đi không bị rối mắt bởi hàng chục lớp ngoặc lồng nhau `( ( ( ) ) )`, thuật toán hiển thị áp dụng logic **Làm phẳng (Flattening)**:
+  - Nếu một chuỗi các bước đi sai chỉ có duy nhất 1 lựa chọn (không rẽ nhánh phụ), chúng sẽ được gộp chung vào 1 cặp ngoặc duy nhất: `(3 ➔ 1 ➔ 11)`.
+  - Chỉ khi tại một điểm có nhiều hướng đi thử nghiệm thất bại khác nhau, các dấu ngoặc lồng nhau mới được kích hoạt để phân tách các "thất bại" độc lập: `Đỉnh ➔ (Nhánh 1) ➔ (Nhánh 2) ➔ ...`.
+
+Điều này giúp người học toán rời rạc dễ dàng nhận diện đâu là **đường đi chính** và đâu là các **nhánh cụt** đã được thuật toán thăm dò.

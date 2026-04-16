@@ -17,6 +17,7 @@ The Cosmic Weaver là một tựa game giải đố trực tuyến hỗ trợ ch
 - **Cơ chế sửa map (Fixing Phase):** Nếu đồ thị không phải là Euler (có nhiều hơn 2 đỉnh bậc lẻ), người chơi có thể tự khắc phục bằng cách thiết lập thêm giới hạn "giao thức kết nối" (Thêm/bớt các cạnh đồ thị vào hình dáng gốc).
 - **Kiểm tra luật Fleury thời gian thực:** Game sẽ báo lỗi nếu bạn đi vào "Cạnh Cầu" (Bridge) có khả năng gây bế tắc nhánh (Dead end).
 - **Hard Mode (Đường Một Chiều):** Hỗ trợ chuyển đổi đồ thị vô hướng thành đồ thị có hướng (Directed Graph) để tăng tư duy tính toán.
+- **Mô hình Debug trực quan:** Hiển thị toàn bộ quá trình thuật toán "thử và sai" khi tìm đường. Các nhánh bị Backtracking (đi sai) được gom nhóm trong ngoặc lồng nhau `( )` giúp người chơi hiểu tại sao một hướng đi lại thất bại.
 - **WebSockets Multiplayer:** Thi đấu tốc độ thời gian thực với đồng đội qua Socket.IO. Kèm hệ thống xác thực đường đi chống gian lận (Anti-Cheat Server Validation).
 
 ## 🛠 Cài Đặt & Chạy Cục Bộ (Local)

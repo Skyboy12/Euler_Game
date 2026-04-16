@@ -55,6 +55,8 @@ let visitedEdges = new Set();
 let invalidEdges = new Set(); 
 let pathStack = []; 
 let displayPathHistory = []; // Dùng riêng cho Debug Mode hiển thị text đường đi
+let debugPathTree = null;   // Cấu trúc cây để render ngoặc (Debug mode)
+let currentDebugNode = null;
 let isDragging = false;
 let mousePos = null;
 
@@ -267,6 +269,8 @@ function generateGame(encodedSeedStr) {
     invalidEdges.clear();
     pathStack = [];
     displayPathHistory = [];
+    debugPathTree = null;
+    currentDebugNode = null;
     isDragging = false;
     
     // Xóa state tự build
@@ -347,14 +351,9 @@ function updateSidebarGraphUI() {
 
     // 1. Cập nhật chuỗi Đường đi hiện tại
     const pathStrEl = document.getElementById('path-string');
-    if (isDebugPathMode && displayPathHistory.length > 0) {
-        // Render với format Debug: tô đỏ các node backtrack
-        pathStrEl.innerHTML = displayPathHistory.map(node => {
-            if (node.status === 'invalid') {
-                return `<span class="path-node-invalid">(${node.id})</span>`;
-            }
-            return `<span>${node.id}</span>`;
-        }).join(' ➔ ');
+    if (isDebugPathMode && debugPathTree) {
+        // Render với format Debug: Hiển thị ngoặc theo hướng: đỉnh -> (nhánh đi sai) -> nhánh đi đúng
+        pathStrEl.innerHTML = renderDebugPathTree(debugPathTree);
     } else if (pathStack.length === 0) {
         pathStrEl.innerText = 'Chưa có';
     } else {
@@ -384,6 +383,29 @@ function updateSidebarGraphUI() {
             }
         }
     }
+}
+
+// Hàm render đệ quy cây đường đi thành chuỗi có ngoặc
+function renderDebugPathTree(node) {
+    let result = `<span>${node.id}</span>`;
+    if (node.children.length === 0) return result;
+
+    for (let i = 0; i < node.children.length; i++) {
+        let child = node.children[i];
+        if (child.isBacktracked) {
+            // Nhánh đi sai: Chỉ bọc ngoặc nếu đây là một nhánh mới hoặc node cha có nhiều hướng đi
+            // Nếu cha cũng đang bị backtrack và chỉ có 1 con duy nhất thì "vẽ thẳng" luôn
+            if (node.isBacktracked && node.children.length === 1) {
+                result += ` ➔ ${renderDebugPathTree(child)}`;
+            } else {
+                result += ` ➔ <span class="path-node-invalid">(${renderDebugPathTree(child)})</span>`;
+            }
+        } else {
+            // Nhánh đang đi hoặc nhánh đúng
+            result += ` ➔ ${renderDebugPathTree(child)}`;
+        }
+    }
+    return result;
 }
 
 // Logic kiểm tra Giai đoạn 1: Phân tích Đồ thị
@@ -553,7 +575,11 @@ function showHint() {
         
         const startId = debugResult.finalPath[0] || 0;
         pathStack.push(startId);
-        displayPathHistory.push({ id: startId, status: 'valid' });
+        
+        // Khởi tạo cây debug
+        debugPathTree = { id: startId, children: [], parent: null, isBacktracked: false };
+        currentDebugNode = debugPathTree;
+        displayPathHistory = [{ id: startId, status: 'valid' }];
 
         function animateDebug() {
             if (logStep >= log.length) {
@@ -567,19 +593,18 @@ function showHint() {
             if (stepData.type === 'move') {
                 visitedEdges.add(edgeKey);
                 pathStack.push(stepData.v);
+                
+                // Thêm vào cây
+                let newNode = { id: stepData.v, children: [], parent: currentDebugNode, isBacktracked: false };
+                currentDebugNode.children.push(newNode);
+                currentDebugNode = newNode;
+
                 displayPathHistory.push({ id: stepData.v, status: 'valid' });
             } else {
-                // Backtrack: Đổi trạng thái node cuối cùng hoặc add entry mới?
-                // Yêu cầu: "Vẫn hiển thị thứ tự đường đi sai nhưng tô đỏ"
-                // Ta tìm node cuối cùng trong history có id là stepData.v và mark invalid
-                // Tuy nhiên trong DFS, log backtrack v -> u (tức là v là node vừa fail)
-                for(let i = displayPathHistory.length - 1; i >= 0; i--) {
-                    if(displayPathHistory[i].id === stepData.v && displayPathHistory[i].status === 'valid') {
-                        displayPathHistory[i].status = 'invalid';
-                        break;
-                    }
-                }
-                
+                // Backtrack
+                currentDebugNode.isBacktracked = true;
+                currentDebugNode = currentDebugNode.parent;
+
                 visitedEdges.delete(edgeKey);
                 invalidEdges.add(edgeKey); 
                 pathStack.pop();
