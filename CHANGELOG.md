@@ -5,6 +5,7 @@
 - **Multiplayer Disconnect**: Added a "Thoát Phòng" button in the multiplayer sidebar. Players can now leave a room and return to the join/create state without refreshing.
 - **Server Side Room Exit**: Implemented `LEAVE_ROOM` event on the server to handle intentional exits, properly updating host status and room occupancy.
 - **Debug Path Visualization**: Implemented a tree-based recursive rendering logic for "Debug Mode". Wrong branches that lead to backtracking are now grouped in parentheses `( )`, with unnecessary nesting flattened for better readability.
+- **Custom Seed Loading**: Added a "Mã Seed..." input field and "Load" button in the header. Players can now manually load specific map configurations by entering their corresponding seed strings.
 
 ### Fixed
 - **UI Synchronization**: Resolved critical functional bugs where the Adjacency Matrix and Adjacency List failed to update in real-time during the "Repair Phase" (PHASE_FIXING).

@@ -663,6 +663,26 @@ function initGame() {
     document.getElementById('btn-undo').onclick = undoMove;
     document.getElementById('btn-hint').onclick = showHint;
     
+    // Xử lý nạp Seed thủ công
+    document.getElementById('btn-load-custom-seed').onclick = () => {
+        const seedInput = document.getElementById('input-custom-seed');
+        const seed = seedInput.value.trim().toUpperCase();
+        if(!seed) return;
+
+        try {
+            const config = SeedManager.decode(seed);
+            // Kiểm tra tính hợp lệ cơ bản
+            if (isNaN(config.nodeCount) || config.nodeCount < 2) {
+                throw new Error("Invalid format");
+            }
+            if(animationTimeout) clearTimeout(animationTimeout);
+            generateGame(seed);
+            seedInput.value = ''; // Clear input
+        } catch (e) {
+            alert("Mã Seed không hợp lệ! Vui lòng kiểm tra lại định dạng.");
+        }
+    };
+    
     const chkDebug = document.getElementById('chk-debug-path');
     if (chkDebug) {
         chkDebug.onchange = () => { isDebugPathMode = chkDebug.checked; };
