@@ -1,5 +1,20 @@
 # Changelog - The Cosmic Weaver
 
+## [2026-04-22]
+### Added
+- **C++ Verification Tool**: Created `euler_verify.cpp`, a robust C++ implementation of the Hierholzer algorithm, supporting both directed (Hard Mode) and undirected graphs for academic verification.
+- **Matrix Export**: Added a "Copy Matrix" button to the sidebar, allowing users to quickly export the current adjacency matrix in a format compatible with standard C++ input.
+
+### Fixed
+- **Adjacency Matrix Synchronization**: Fixed a bug where edges in the matrix were not correctly marked as visited ("x") in Hard Mode due to inconsistent edge key generation.
+- **Button Text Visibility**: Resolved an issue where text on primary buttons (Red, Purple, Slate) disappeared when hovered in Light Theme.
+- **Algorithm Consistency**: Synchronized the neighbor traversal order in `GraphGenerator` (JS) and `euler_verify.cpp` (C++) to ensure identical Euler path outputs for the same seed.
+
+### Improved
+- **Light Theme UI**: Refined the Light Mode aesthetics with higher contrast, a Slate-based color palette (#f8fafc), and improved Glassmorphism effects for headers and overlays.
+- **Debug Mode Trace**: Optimized the recursive debug pathfinder to be more predictable and aligned with the synchronized traversal logic.
+
+
 ## [2026-04-16]
 ### Added
 - **Multiplayer Disconnect**: Added a "Thoát Phòng" button in the multiplayer sidebar. Players can now leave a room and return to the join/create state without refreshing.

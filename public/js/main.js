@@ -256,6 +256,11 @@ function generateGame(encodedSeedStr) {
     currentGraphGen = new GraphGenerator(configData.nodeCount, configData.complexity, configData.rawNumericSeed, configData.isHardMode);
     adjacencyList = currentGraphGen.generate();
     
+    // Expose to window for debugging
+    window.currentGraphGen = currentGraphGen;
+    window.adjacencyList = adjacencyList;
+    window.getEdgeKey = getEdgeKey;
+    
     // Thu thập màn hình vẽ
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
@@ -369,9 +374,7 @@ function updateSidebarGraphUI() {
 
             const isEdge = adjacencyList.get(i).includes(j);
             if (isEdge) {
-                const min = Math.min(i, j);
-                const max = Math.max(i, j);
-                const edgeKey = `${min}-${max}`;
+                const edgeKey = getEdgeKey(i, j);
                 
                 if (visitedEdges && visitedEdges.has(edgeKey)) {
                     td.className = 'm-visited';
@@ -637,7 +640,34 @@ function showHint() {
     }
 }
 
+function setupTheme() {
+    const themeToggle = document.getElementById('theme-toggle');
+    const currentTheme = localStorage.getItem('theme') || 'dark';
+    
+    // Set initial theme
+    if (currentTheme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        themeToggle.innerText = '☀️';
+    }
+
+    themeToggle.onclick = () => {
+        let theme = document.documentElement.getAttribute('data-theme');
+        if (theme === 'light') {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.setItem('theme', 'dark');
+            themeToggle.innerText = '🌙';
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            localStorage.setItem('theme', 'light');
+            themeToggle.innerText = '☀️';
+        }
+        // Redraw canvas if needed (though it will redraw on next interaction)
+        render(); 
+    };
+}
+
 function initGame() {
+    setupTheme();
     // Khởi động Offline Local
     const isHard = document.getElementById('chk-hard-mode') ? document.getElementById('chk-hard-mode').checked : false;
     const encodedSeedStr = SeedManager.encode(getRandomNodeCount(), COMPLEXITY, LEVEL_ID, isHard);
@@ -719,6 +749,26 @@ function initGame() {
             document.getElementById('adjacency-matrix-view').style.display = 'none';
             document.getElementById('btn-toggle-graph-view').innerText = 'Hiển thị Ma trận';
         }
+    };
+
+    document.getElementById('btn-copy-matrix').onclick = () => {
+        if (!currentGraphGen) return;
+        const n = currentGraphGen.nodeCount;
+        let output = `${n}\n`;
+        for (let i = 0; i < n; i++) {
+            let row = [];
+            for (let j = 0; j < n; j++) {
+                row.push(adjacencyList.get(i).includes(j) ? 1 : 0);
+            }
+            output += row.join(' ') + '\n';
+        }
+        
+        navigator.clipboard.writeText(output).then(() => {
+            alert("Đã copy Ma trận kề vào bộ nhớ tạm!\nBạn có thể dán vào file C++ để kiểm tra.");
+        }).catch(err => {
+            console.error('Lỗi khi copy:', err);
+            alert("Không thể copy. Hãy kiểm tra quyền truy cập clipboard.");
+        });
     };
 
     // Setup input listeners
@@ -954,6 +1004,15 @@ function checkWinCondition() {
 }
 
 function render() {
+    // 0. Fetch theme colors from root
+    const rootStyle = getComputedStyle(document.documentElement);
+    const colorWarning = rootStyle.getPropertyValue('--text-warning').trim() || '#f59e0b';
+    const colorAccent = rootStyle.getPropertyValue('--text-accent').trim() || '#38bdf8';
+    const colorBorder = rootStyle.getPropertyValue('--border-color').trim() || '#334155';
+    const colorSecondary = rootStyle.getPropertyValue('--text-secondary').trim() || '#94a3b8';
+    const colorPrimary = rootStyle.getPropertyValue('--text-primary').trim() || '#e2e8f0';
+    const primaryTextOnNode = document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#fff';
+
     // 1. Xóa background
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
@@ -977,9 +1036,9 @@ function render() {
             
             // Highlight nếu cạnh đã đi qua
             if (visitedEdges.has(edgeKey)) {
-                ctx.strokeStyle = '#f59e0b';
+                ctx.strokeStyle = colorWarning;
                 ctx.shadowBlur = 10;
-                ctx.shadowColor = '#f59e0b';
+                ctx.shadowColor = colorWarning;
                 ctx.lineWidth = 4;
             } else if (invalidEdges.has(edgeKey)) {
                 // CẠNH SAI (BACKTRACKED)
@@ -988,7 +1047,7 @@ function render() {
                 ctx.lineWidth = 2;
                 ctx.shadowBlur = 0;
             } else {
-                ctx.strokeStyle = '#334155';
+                ctx.strokeStyle = colorBorder;
                 ctx.shadowBlur = 0;
                 ctx.lineWidth = 3;
             }
@@ -1008,10 +1067,10 @@ function render() {
                 ctx.lineTo(midX - 10 * Math.cos(angle + Math.PI / 6), midY - 10 * Math.sin(angle + Math.PI / 6));
                 ctx.closePath();
                 
-                ctx.fillStyle = visitedEdges.has(edgeKey) ? '#f59e0b' : '#94a3b8';
+                ctx.fillStyle = visitedEdges.has(edgeKey) ? colorWarning : colorSecondary;
                 if (visitedEdges.has(edgeKey)) {
                      ctx.shadowBlur = 10;
-                     ctx.shadowColor = '#f59e0b';
+                     ctx.shadowColor = colorWarning;
                 }
                 ctx.fill();
                 ctx.shadowBlur = 0; // reset
@@ -1025,9 +1084,9 @@ function render() {
         const startNode = nodes[pathStack[pathStack.length - 1]];
         ctx.moveTo(startNode.x, startNode.y);
         ctx.lineTo(mousePos.x, mousePos.y);
-        ctx.strokeStyle = '#38bdf8'; // Màu kéo xanh dương
+        ctx.strokeStyle = colorAccent; // Màu kéo xanh dương
         ctx.shadowBlur = 15;
-        ctx.shadowColor = '#38bdf8';
+        ctx.shadowColor = colorAccent;
         ctx.lineWidth = 3;
         ctx.stroke();
     }
@@ -1056,13 +1115,13 @@ function render() {
         if (currentPhase === PHASE_FIXING && selectedFixNode === n.id) {
             // Đỉnh đang chọn ở Phase Fixing được thắp sáng
             ctx.fillStyle = '#fff';
-            ctx.strokeStyle = '#38bdf8';
+            ctx.strokeStyle = colorAccent;
             ctx.lineWidth = 4;
             ctx.shadowBlur = 15;
-            ctx.shadowColor = '#38bdf8';
+            ctx.shadowColor = colorAccent;
         } else if (currentPhase === PHASE_FIXING && isOdd) {
             // Ngôi sao lẻ ở Phase Fixing (nhấp nháy đỏ hoặc viền đỏ)
-            ctx.fillStyle = '#1e293b';
+            ctx.fillStyle = colorBorder;
             ctx.strokeStyle = '#ef4444';
             ctx.lineWidth = 4;
             ctx.shadowBlur = 10;
@@ -1070,17 +1129,17 @@ function render() {
         } else if (pathStack.length > 0 && n.id === pathStack[pathStack.length - 1] && currentPhase === PHASE_DRAWING) {
             // Đỉnh hiện tại (Mới nhất)
             ctx.fillStyle = '#fff';
-            ctx.strokeStyle = '#38bdf8';
+            ctx.strokeStyle = colorAccent;
             ctx.lineWidth = 4;
         } else if (pathStack.includes(n.id)) {
             // Đỉnh đã qua
-            ctx.fillStyle = '#f59e0b';
+            ctx.fillStyle = colorWarning;
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2;
         } else {
             // Đỉnh trống
-            ctx.fillStyle = '#1e293b';
-            ctx.strokeStyle = '#475569';
+            ctx.fillStyle = colorBorder; // Use border color or a specific node bg variable
+            ctx.strokeStyle = colorSecondary;
             ctx.lineWidth = 2;
         }
         
@@ -1088,8 +1147,8 @@ function render() {
         ctx.stroke();
         
         // Label Text
-        ctx.fillStyle = '#e2e8f0';
-        ctx.font = '12px sans-serif';
+        ctx.fillStyle = primaryTextOnNode;
+        ctx.font = 'bold 12px Outfit, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(n.id, n.x, n.y);
@@ -1102,3 +1161,8 @@ function render() {
 window.addEventListener('load', () => {
     initGame();
 });
+// Expose for debugging
+window.currentGraphGen = currentGraphGen;
+window.adjacencyList = adjacencyList;
+window.getEdgeKey = getEdgeKey;
+window.currentPhase = currentPhase;

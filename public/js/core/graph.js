@@ -169,7 +169,8 @@ export class GraphGenerator {
     findEulerianPathDebug() {
         let adj = new Map();
         for (let [node, neighbors] of this.adjacencyList.entries()) {
-            adj.set(node, [...neighbors]);
+            // Sắp xếp tăng dần để ưu tiên duyệt đỉnh nhỏ trước (giống C++)
+            adj.set(node, [...neighbors].sort((a, b) => a - b));
         }
         
         const totalEdges = Array.from(this.adjacencyList.values()).reduce((sum, n) => sum + n.length, 0) / (this.isHardMode ? 1 : 2);
@@ -226,9 +227,9 @@ export class GraphGenerator {
     // Thuật toán Hierholzer để tìm chu trình / Đường đi Euler (Sử dụng cho hint chính xác)
     findEulerianPath() {
         let adj = new Map();
-        // Deep copy danh sách kề
+        // Deep copy và sắp xếp giảm dần để pop() lấy đỉnh nhỏ nhất trước (khớp C++)
         for (let [node, neighbors] of this.adjacencyList.entries()) {
-            adj.set(node, [...neighbors]);
+            adj.set(node, [...neighbors].sort((a, b) => b - a));
         }
 
         let edgeCount = new Map();
